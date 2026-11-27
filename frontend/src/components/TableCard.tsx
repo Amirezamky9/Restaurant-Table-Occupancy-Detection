@@ -15,11 +15,20 @@ export default function TableCard({ table, now }: { table: TableStatus; now: num
       ? now - table.occupied_since
       : table.current_session_seconds; // frozen while waiting to become AVAILABLE
   const note = PENDING_NOTE[table.status];
+  const badge = table.needs_cleaning
+    ? { text: "NEEDS CLEANING", classes: "bg-orange-500" }
+    : table.occupied
+      ? { text: "OCCUPIED", classes: "bg-red-600" }
+      : { text: "AVAILABLE", classes: "bg-emerald-600" };
 
   return (
     <div
       className={`rounded-lg border p-3 ${
-        table.occupied ? "border-red-200 bg-red-50/60" : "border-emerald-200 bg-emerald-50/60"
+        table.needs_cleaning
+          ? "border-orange-200 bg-orange-50/60"
+          : table.occupied
+            ? "border-red-200 bg-red-50/60"
+            : "border-emerald-200 bg-emerald-50/60"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -32,11 +41,9 @@ export default function TableCard({ table, now }: { table: TableStatus; now: num
         </span>
       </div>
       <div
-        className={`mt-2 rounded-md py-1.5 text-center text-sm font-bold tracking-wide text-white ${
-          table.occupied ? "bg-red-600" : "bg-emerald-600"
-        }`}
+        className={`mt-2 rounded-md py-1.5 text-center text-sm font-bold tracking-wide text-white ${badge.classes}`}
       >
-        {table.occupied ? "OCCUPIED" : "AVAILABLE"}
+        {badge.text}
       </div>
       <p className="mt-2 flex h-4 items-center gap-1 text-xs text-slate-600">
         {table.occupied ? (
@@ -45,6 +52,7 @@ export default function TableCard({ table, now }: { table: TableStatus; now: num
             {formatDuration(occupiedFor)}
           </>
         ) : null}
+        {table.unattended && <span className="ml-auto font-semibold text-red-700">No staff visit yet</span>}
         {note && <span className="ml-auto italic text-amber-700">{note}</span>}
       </p>
     </div>

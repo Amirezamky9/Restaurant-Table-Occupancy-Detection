@@ -174,6 +174,55 @@ def suggest_table_outlines(
     return [outline for outline in outlines if outline_problem(outline, frame_size) is None]
 
 
+def _clip_polygon_to_box(points: list[Point], box: tuple[float, float, float, float]) -> list[Point]:
+    """Sutherland-Hodgman: the part of the polygon inside the (x1, y1, x2, y2) box."""
+    x1, y1, x2, y2 = box
+
+    def clip(poly: list[Point], inside, intersect) -> list[Point]:
+        if not poly:
+            return poly
+        out: list[Point] = []
+        prev = poly[-1]
+        for cur in poly:
+            if inside(cur):
+                if not inside(prev):
+                    out.append(intersect(prev, cur))
+                out.append(cur)
+            elif inside(prev):
+                out.append(intersect(prev, cur))
+            prev = cur
+        return out
+
+    def cross_x(a: Point, b: Point, x: float) -> Point:
+        t = (x - a[0]) / (b[0] - a[0]) if b[0] != a[0] else 0.0
+        return (x, a[1] + t * (b[1] - a[1]))
+
+    def cross_y(a: Point, b: Point, y: float) -> Point:
+        t = (y - a[1]) / (b[1] - a[1]) if b[1] != a[1] else 0.0
+        return (a[0] + t * (b[0] - a[0]), y)
+
+    poly = clip(points, lambda p: p[0] >= x1, lambda a, b: cross_x(a, b, x1))
+    poly = clip(poly, lambda p: p[0] <= x2, lambda a, b: cross_x(a, b, x2))
+    poly = clip(poly, lambda p: p[1] >= y1, lambda a, b: cross_y(a, b, y1))
+    poly = clip(poly, lambda p: p[1] <= y2, lambda a, b: cross_y(a, b, y2))
+    return poly
+
+
+def box_polygon_overlap_ratio(box: tuple[float, float, float, float], points: list[Point]) -> float:
+    """Share of the box's area covered by the polygon (0 to 1).
+
+    A seated person's box overlaps the table outline substantially even when
+    the box's bottom centre (their feet, on the chair) falls outside it.
+    """
+    box_area = (box[2] - box[0]) * (box[3] - box[1])
+    if box_area <= 0:
+        return 0.0
+    clipped = _clip_polygon_to_box(points, box)
+    if len(clipped) < 3:
+        return 0.0
+    return min(1.0, polygon_area(clipped) / box_area)
+
+
 def outline_problem(points: list[Point], frame_size: tuple[int, int]) -> str | None:
     """Why the outline cannot be used as a table, or None if it is fine."""
     if len(points) < 3:

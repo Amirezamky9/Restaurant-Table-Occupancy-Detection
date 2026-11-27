@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-TableStatusName = Literal["AVAILABLE", "PENDING_OCCUPIED", "OCCUPIED", "PENDING_AVAILABLE"]
+TableStatusName = Literal["AVAILABLE", "PENDING_OCCUPIED", "OCCUPIED", "PENDING_AVAILABLE", "NEEDS_CLEANING"]
 SourceLabel = Literal["LIVE", "RECONNECTING", "NO SOURCE"]
 
 ReferencePoint = Literal["bottom_center", "center"]
@@ -40,6 +40,16 @@ class OccupancySettings(BaseModel):
     # Detections flicker for a frame or two even when someone sits still. A gap
     # up to this long still counts as "someone is at the table".
     presence_hold_seconds: float = Field(default=1.0, ge=0)
+    # A person also counts as at the table when this share of their box overlaps
+    # the table polygon (seated people lean over the table while their feet stay
+    # on the chair, outside a tabletop outline). 0 = anchor point only.
+    presence_overlap_ratio: float = Field(default=0.0, ge=0, le=1)
+    # After the guests leave, the table needs cleaning until staff attend to it.
+    cleaning_enabled: bool = False
+    # Continuous staff presence at the table that clears NEEDS_CLEANING.
+    cleaning_clear_seconds: float = Field(default=3.0, ge=0)
+    # Alert when guests have been seated this long with no staff visit. 0 = off.
+    unattended_seconds: float = Field(default=0.0, ge=0)
 
 
 class TableConfig(BaseModel):
@@ -101,6 +111,11 @@ class TableStatusOut(BaseModel):
     current_session_seconds: float
     total_occupied_seconds: float
     session_count: int
+    needs_cleaning: bool = False
+    unattended: bool = Field(default=False, description="guests seated past the unattended limit with no staff visit")
+    expected_free_in_seconds: float | None = Field(
+        default=None, description="queue estimate: seconds until this table is expected to free up"
+    )
 
 
 class PipelineStatus(BaseModel):
@@ -229,6 +244,22 @@ class AnalyticsOut(BaseModel):
     average_occupancy: float | None = Field(description="share of table time occupied, 0 to 1")
     tables: list[TableAnalyticsOut]
     timeline: list[OccupancyPointOut]
+
+
+class PeakHourOut(BaseModel):
+    """Occupied time in one weekday/hour slot, for staffing decisions."""
+
+    weekday: int = Field(description="0 = Monday .. 6 = Sunday, server local time")
+    hour: int = Field(ge=0, le=23)
+    occupied_seconds: float
+    session_count: int
+
+
+class PeakHoursOut(BaseModel):
+    """GET /api/analytics/peak-hours: busiest weekday/hour slots."""
+
+    video_id: str | None
+    hours: list[PeakHourOut]
 
 
 class MonitoredVideoOut(BaseModel):

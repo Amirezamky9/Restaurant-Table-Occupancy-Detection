@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 
 Interval = tuple[float, float]
 
@@ -81,7 +82,7 @@ def rebuild_sessions(events: list[dict], runs: list[Interval]) -> list[Session]:
                 table["left"] = None  # came back: same session
             elif status == "PENDING_AVAILABLE":
                 table["left"] = at
-            elif status == "AVAILABLE":
+            elif status in ("AVAILABLE", "NEEDS_CLEANING"):
                 if table["start"] is not None:
                     end = table["left"] if table["left"] is not None else at
                     sessions.append(Session(event["table_id"], table["name"], table["start"], end))
@@ -170,3 +171,32 @@ def compute_analytics(
         "tables": table_rows,
         "timeline": timeline,
     }
+
+
+def peak_hours(sessions: list[Session]) -> list[dict]:
+    """Occupied seconds and session starts per weekday/hour slot (server local time).
+
+    Sessions crossing an hour boundary are split across the slots they touch.
+    The result matches schemas.PeakHoursOut hours, busiest first.
+    """
+    slots: dict[tuple[int, int], dict] = {}
+    for session in sessions:
+        start_dt = datetime.fromtimestamp(session.start)
+        key = (start_dt.weekday(), start_dt.hour)
+        slot = slots.setdefault(key, {"weekday": key[0], "hour": key[1], "occupied_seconds": 0.0, "session_count": 0})
+        slot["session_count"] += 1
+        cursor = session.start
+        while cursor < session.end:
+            dt = datetime.fromtimestamp(cursor)
+            hour_end = dt.replace(minute=0, second=0, microsecond=0).timestamp() + 3600
+            chunk_end = min(session.end, hour_end)
+            chunk_key = (dt.weekday(), dt.hour)
+            chunk = slots.setdefault(chunk_key, {"weekday": chunk_key[0], "hour": chunk_key[1],
+                                                  "occupied_seconds": 0.0, "session_count": 0})
+            chunk["occupied_seconds"] += chunk_end - cursor
+            cursor = chunk_end
+    result = [
+        {**slot, "occupied_seconds": round(slot["occupied_seconds"], 1)}
+        for slot in slots.values()
+    ]
+    return sorted(result, key=lambda slot: -slot["occupied_seconds"])

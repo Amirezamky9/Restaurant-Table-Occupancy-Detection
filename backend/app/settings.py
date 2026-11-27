@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     enter_seconds: float = Field(ge=0)
     leave_seconds: float = Field(ge=0)
     reference_point: Literal["bottom_center", "center"]
+    presence_overlap_ratio: float = Field(default=0.0, ge=0, le=1)
+    cleaning_enabled: bool = False
+    cleaning_clear_seconds: float = Field(default=3.0, ge=0)
+    unattended_seconds: float = Field(default=0.0, ge=0)
 
     # Video source
     source_reconnect_seconds: float = Field(gt=0)

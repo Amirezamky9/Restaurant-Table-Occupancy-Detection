@@ -65,6 +65,10 @@ def default_occupancy(settings: Settings) -> OccupancySettings:
         enter_seconds=settings.enter_seconds,
         leave_seconds=settings.leave_seconds,
         reference_point=settings.reference_point,
+        presence_overlap_ratio=settings.presence_overlap_ratio,
+        cleaning_enabled=settings.cleaning_enabled,
+        cleaning_clear_seconds=settings.cleaning_clear_seconds,
+        unattended_seconds=settings.unattended_seconds,
     )
 
 

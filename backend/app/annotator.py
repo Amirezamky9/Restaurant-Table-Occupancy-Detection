@@ -25,18 +25,21 @@ YELLOW = (0, 200, 255)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 PINK = (255, 0, 255)  # people's reference points: stands out on light floors and tables
+ORANGE = (0, 140, 255)  # needs cleaning: attention, but nobody is seated
 
 STATUS_COLORS = {
     TableStatus.AVAILABLE: GREEN,
     TableStatus.OCCUPIED: RED,
     TableStatus.PENDING_OCCUPIED: YELLOW,
     TableStatus.PENDING_AVAILABLE: YELLOW,
+    TableStatus.NEEDS_CLEANING: ORANGE,
 }
 STATUS_TEXT = {
     TableStatus.AVAILABLE: "AVAILABLE",
     TableStatus.OCCUPIED: "OCCUPIED",
     TableStatus.PENDING_OCCUPIED: "PENDING",
     TableStatus.PENDING_AVAILABLE: "PENDING",
+    TableStatus.NEEDS_CLEANING: "CLEANING",
 }
 
 

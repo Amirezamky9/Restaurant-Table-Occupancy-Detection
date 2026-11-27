@@ -145,6 +145,7 @@ class Pipeline:
         self._model_state = "loading"
         self._processing = RateMeter()
         self._streaming = RateMeter()
+        self._clean_requests: set[str] = set()  # tables staff marked cleaned, applied by the detection thread
         self._last_status_key: object = None
         self._last_status_sent = 0.0
 
@@ -346,6 +347,11 @@ class Pipeline:
         with self._lock:
             return None if self._frame is None else self._frame.copy()
 
+    def mark_cleaned(self, table_id: str) -> None:
+        """Queue a staff "table cleaned" confirmation for the detection thread."""
+        with self._lock:
+            self._clean_requests.add(table_id)
+
     def snapshot_jpeg(self) -> bytes | None:
         """The newest raw (not annotated) frame as a JPEG, or None before the first frame."""
         with self._lock:
@@ -373,6 +379,22 @@ class Pipeline:
                 current_session_seconds=round(state.occupied_seconds(now) - state.total_occupied_seconds, 1),
                 total_occupied_seconds=round(state.occupied_seconds(now), 1),
                 session_count=state.session_count,
+                needs_cleaning=state.status.value == "NEEDS_CLEANING",
+                unattended=bool(
+                    config
+                    and config.occupancy.unattended_seconds > 0
+                    and state.status.value == "OCCUPIED"
+                    and state.occupied_since is not None
+                    and now - (state.last_staff_visit or state.occupied_since)
+                    >= config.occupancy.unattended_seconds
+                ),
+                expected_free_in_seconds=(
+                    round(max(0.0, state.total_occupied_seconds / (state.session_count - 1)
+                              - (now - state.occupied_since)), 1)
+                    if state.status.value == "OCCUPIED" and state.occupied_since is not None
+                    and state.session_count > 1 and state.total_occupied_seconds > 0
+                    else None
+                ),
             )
             for state in results.states
         ]
@@ -386,7 +408,7 @@ class Pipeline:
             frame_height=frame.shape[0] if frame is not None else None,
             people_count=len(results.detections),
             table_count=len(tables),
-            available_count=sum(not table.occupied for table in tables),
+            available_count=sum(table.status == "AVAILABLE" for table in tables),
             tables=tables,
             timestamp=now,
         )
@@ -511,6 +533,11 @@ class Pipeline:
                 detections = detector.detect(frame)
                 # Timed by when the frame arrived, so events never fall after the end of its run.
                 events = tracker.update(detections, now=frame_time) if tracker else []
+                if tracker:
+                    with self._lock:
+                        clean_requests, self._clean_requests = self._clean_requests, set()
+                    for table_id in clean_requests:
+                        events += tracker.mark_cleaned(table_id, now=frame_time)
                 self._processing.tick()
 
                 results = Results(
@@ -525,7 +552,16 @@ class Pipeline:
                     self._results = results
                 if events:
                     self._record_events(video_id, events, {table.id: table.name for table in results.tables})
-                self._publish_status(force=bool(events))
+                if tracker and tracker.pending_alerts:
+                    alerts, tracker.pending_alerts = tracker.pending_alerts, []
+                    for alert in alerts:
+                        logger.warning("Table {} alert: {}", alert.table_id, alert.kind)
+                        self._broadcaster.publish({"type": "alert", "data": {
+                            "table_id": alert.table_id, "kind": alert.kind, "timestamp": alert.timestamp,
+                        }})
+                    self._publish_status(force=True)
+                else:
+                    self._publish_status(force=bool(events))
 
                 if time.monotonic() - last_fps_log >= FPS_LOG_SECONDS:
                     last_fps_log = time.monotonic()
